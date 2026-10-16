@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --bg: #f6f7fb;
+  --card: #ffffff;
+  --ink: #0f172a;
+  --muted: #64748b;
+  --line: #e5e7eb;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0f19;
+    --card: #131a2a;
+    --ink: #e8ecf5;
+    --muted: #94a3b8;
+    --line: #1f2a40;
+  }
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  overflow-x: clip;
+  -webkit-tap-highlight-color: transparent;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Hilangkan jeda tap & double-tap zoom pada elemen interaktif di HP */
+a, button, summary, label { touch-action: manipulation; }
+
+/* Di dalam layer agar bisa ditimpa utility Tailwind (mis. bg-indigo-500) */
+@layer components {
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+  }
+}
+
+@utility text-muted {
+  color: var(--muted);
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.fade-up { animation: fade-up 0.35s ease both; }
