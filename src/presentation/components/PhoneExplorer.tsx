@@ -75,7 +75,7 @@ export function PhoneExplorer({ catalogs, loadPage }: Props) {
 
   return (
     <div>
-      <div className="no-scrollbar -mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 py-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:px-0 lg:grid-cols-6">
+      <div className="no-scrollbar -mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 py-2 sm:mx-0 sm:grid sm:grid-cols-3 lg:grid-cols-6">
         {catalogs.map((c) => (
           <BrandCard
             key={c.brand.id}
