@@ -1,6 +1,6 @@
 import { useCases } from "@/di/container";
 import { PhoneExplorer } from "@/presentation/components/PhoneExplorer";
-import { loadBrandPage } from "./actions";
+import { loadAllBrandPhones } from "./actions";
 
 export const revalidate = 3600;
 
@@ -19,7 +19,7 @@ export default async function Home() {
         </h1>
         <p className="text-muted mt-3 max-w-xl text-sm sm:text-base">Pilih brand, cari model, lalu ketuk untuk melihat spesifikasi lengkap.</p>
       </section>
-      <PhoneExplorer catalogs={catalogs} loadPage={loadBrandPage} />
+      <PhoneExplorer catalogs={catalogs} loadAll={loadAllBrandPhones} />
     </>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BrandCatalog } from "@/domain/entities/Phone";
 import { countSeries, filterBySeries, seriesLabel } from "@/domain/services/phoneSeries";
 import { NEW_BADGE_COUNT, searchPhones } from "@/domain/services/searchPhones";
@@ -8,79 +8,96 @@ import { BrandCard } from "./BrandCard";
 import { Pagination } from "./Pagination";
 import { PhoneCard } from "./PhoneCard";
 import { SearchBar } from "./SearchBar";
-import { SeriesFilter } from "./SeriesFilter";
+import { SeriesFilter, type SeriesStatus } from "./SeriesFilter";
 
 type Layout = "grid" | "list";
 
+/** Jumlah HP per halaman (paging dilakukan di klien setelah semua data terkumpul). */
+const PAGE_SIZE = 24;
+
 type Props = {
+  /** Halaman pertama tiap brand, dirender di server agar tampilan awal cepat. */
   catalogs: BrandCatalog[];
-  /** Ambil satu halaman HP brand dari server. */
-  loadPage: (brandId: string, page: number) => Promise<BrandCatalog | null>;
+  /** Ambil seluruh HP brand (semua halaman API digabung) dari server. */
+  loadAll: (brandId: string) => Promise<BrandCatalog | null>;
 };
 
-export function PhoneExplorer({ catalogs, loadPage }: Props) {
+export function PhoneExplorer({ catalogs, loadAll }: Props) {
   const [activeId, setActiveId] = useState(catalogs[0]?.brand.id ?? "");
   const [query, setQuery] = useState("");
   const [layout, setLayout] = useState<Layout>("grid");
   const [series, setSeries] = useState<string | null>(null);
-  // Halaman yang sedang tampil per brand (diambil dari API saat pindah halaman)
-  const [loaded, setLoaded] = useState<Record<string, BrandCatalog>>({});
-  const [loading, startLoading] = useTransition();
+  // Seluruh HP per brand, diambil sekali saat brand pertama kali dibuka
+  const [full, setFull] = useState<Record<string, BrandCatalog>>({});
+  const [failed, setFailed] = useState<Record<string, boolean>>({});
+  const requested = useRef(new Set<string>());
   const listTop = useRef<HTMLHeadingElement>(null);
 
-  const current = useMemo(() => catalogs.map((c) => loaded[c.brand.id] ?? c), [catalogs, loaded]);
-  const active = current.find((c) => c.brand.id === activeId) ?? current[0];
+  const fetchAll = useCallback(
+    async (brandId: string) => {
+      requested.current.add(brandId);
+      setFailed(({ [brandId]: _, ...rest }) => rest);
+      try {
+        const res = await loadAll(brandId);
+        if (!res) throw new Error("brand tidak ditemukan");
+        setFull((prev) => ({ ...prev, [brandId]: res }));
+      } catch (err) {
+        console.warn("[phones] gagal memuat semua data:", err);
+        requested.current.delete(brandId);
+        setFailed((prev) => ({ ...prev, [brandId]: true }));
+      }
+    },
+    [loadAll]
+  );
+
+  useEffect(() => {
+    if (activeId && !requested.current.has(activeId)) fetchAll(activeId);
+  }, [activeId, fetchAll]);
+
+  const active = catalogs.find((c) => c.brand.id === activeId) ?? catalogs[0];
+  const activeFull = active ? full[active.brand.id] : undefined;
+  // Sebelum semua data siap, tampilkan halaman pertama dari server
+  const basePhones = useMemo(() => activeFull?.phones ?? active?.phones ?? [], [activeFull, active]);
+  const status: SeriesStatus = activeFull ? "ready" : failed[activeId] ? "error" : "loading";
   const searching = query.trim().length > 0;
 
-  // Series dihitung dari halaman yang sedang tampil; series terpilih tetap ditampilkan walau kosong
-  const seriesCounts = useMemo(() => {
-    if (!active) return [];
-    const counts = countSeries(active.brand.id, active.phones);
-    if (series && !counts.some((s) => s.id === series))
-      counts.push({ id: series, label: seriesLabel(active.brand.id, series), count: 0 });
-    return counts;
-  }, [active, series]);
-
-  // Saat mencari, hasil diambil dari halaman yang sedang tampil di semua brand (filter series diabaikan)
-  const phones = useMemo(
-    () =>
-      searching
-        ? searchPhones(current.flatMap((c) => c.phones), query)
-        : active
-          ? filterBySeries(active.brand.id, active.phones, series)
-          : [],
-    [searching, current, query, active, series]
+  const seriesCounts = useMemo(
+    () => (active && activeFull ? countSeries(active.brand.id, activeFull.phones) : []),
+    [active, activeFull]
   );
+
+  // Pencarian memakai data lengkap untuk brand yang sudah dimuat, halaman pertama untuk sisanya
+  const results = useMemo(() => {
+    if (searching) return searchPhones(catalogs.flatMap((c) => full[c.brand.id]?.phones ?? c.phones), query);
+    return active ? filterBySeries(active.brand.id, basePhones, series) : [];
+  }, [searching, catalogs, full, query, active, basePhones, series]);
+
+  // Halaman otomatis kembali ke 1 saat brand, series, atau kata kunci berubah
+  const pageKey = `${activeId}|${series}|${query}`;
+  const [paging, setPaging] = useState({ key: pageKey, page: 1 });
+  const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
+  const page = paging.key === pageKey ? Math.min(paging.page, totalPages) : 1;
+  const phones = results.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   // Badge "baru" mengikuti urutan asli API, bukan urutan setelah difilter
-  const newPhones = useMemo(
-    () => new Set(active && active.page === 1 ? active.phones.slice(0, NEW_BADGE_COUNT) : []),
-    [active]
-  );
+  const newPhones = useMemo(() => new Set(basePhones.slice(0, NEW_BADGE_COUNT)), [basePhones]);
 
-  const goToPage = (page: number) =>
-    startLoading(async () => {
-      try {
-        const next = await loadPage(active.brand.id, page);
-        if (next) {
-          setLoaded((prev) => ({ ...prev, [next.brand.id]: next }));
-          // Di HP pagination ada jauh di bawah: bawa pengguna kembali ke awal daftar
-          listTop.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      } catch (err) {
-        console.warn("[phones] gagal memuat halaman:", err);
-      }
-    });
+  const goToPage = (next: number) => {
+    setPaging({ key: pageKey, page: next });
+    // Di HP pagination ada jauh di bawah: bawa pengguna kembali ke awal daftar
+    listTop.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   if (!active) return null;
 
   return (
     <div>
-      <div className="no-scrollbar -mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 py-2 sm:mx-0 sm:grid sm:grid-cols-3 lg:grid-cols-6">
+      <div className="no-scrollbar -mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 py-2 sm:mx-0 sm:grid sm:grid-cols-3  lg:grid-cols-6">
         {catalogs.map((c) => (
           <BrandCard
             key={c.brand.id}
             brand={c.brand}
-            count={c.phones.length}
+            count={full[c.brand.id]?.phones.length ?? c.phones.length}
             active={c.brand.id === activeId && !searching}
             onSelect={() => { setActiveId(c.brand.id); setQuery(""); setSeries(null); }}
           />
@@ -91,8 +108,8 @@ export function PhoneExplorer({ catalogs, loadPage }: Props) {
         <h2 ref={listTop} className="scroll-mt-20 text-lg font-bold break-words sm:text-xl">
           {searching
             ? `Hasil pencarian “${query}”`
-            : `HP terbaru ${active.brand.name}${series ? ` · ${seriesLabel(active.brand.id, series)}` : ""}`}
-          <span className="text-muted ml-2 text-sm font-medium">({phones.length})</span>
+            : `HP ${active.brand.name}${series ? ` · ${seriesLabel(active.brand.id, series)}` : ""}`}
+          <span className="text-muted ml-2 text-sm font-medium">({results.length})</span>
         </h2>
         <div className="flex gap-2">
           <SearchBar value={query} onChange={setQuery} />
@@ -112,39 +129,36 @@ export function PhoneExplorer({ catalogs, loadPage }: Props) {
       </div>
 
       {!searching && (
-        <SeriesFilter series={seriesCounts} total={active.phones.length} value={series} onChange={setSeries} />
+        <SeriesFilter
+          status={status}
+          series={seriesCounts}
+          total={basePhones.length}
+          value={series}
+          onChange={setSeries}
+          onRetry={() => fetchAll(active.brand.id)}
+        />
       )}
 
-      {!searching && active.source === "fallback" && (
+      {!searching && (activeFull ?? active).source === "fallback" && (
         <p className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-600">
           API sedang tidak bisa diakses — menampilkan data contoh. Coba muat ulang nanti.
         </p>
       )}
 
       {phones.length === 0 ? (
-        <>
-          <div className="card text-muted mt-6 rounded-2xl p-6 text-center text-sm sm:p-10 sm:text-base">
-            <div className="mb-2 text-3xl">🔍</div>
-            {!searching && series
-              ? "Tidak ada HP series ini di halaman ini. Coba halaman lain atau pilih series lain."
-              : "Tidak ada HP yang cocok. Coba kata kunci lain."}
-          </div>
-          {!searching && series && (
-            <Pagination page={active.page} totalPages={active.totalPages} disabled={loading} onChange={goToPage} />
-          )}
-        </>
+        <div className="card text-muted mt-6 rounded-2xl p-6 text-center text-sm sm:p-10 sm:text-base">
+          <div className="mb-2 text-3xl">🔍</div>
+          {!searching && series ? "Tidak ada HP di series ini." : "Tidak ada HP yang cocok. Coba kata kunci lain."}
+        </div>
       ) : (
         <>
           <div
-            key={`${activeId}-${layout}-${query}-${series}-${active.page}`}
-            aria-busy={loading}
-            className={`${layout === "grid" ? "mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4" : "mt-5 flex flex-col gap-2"} ${
-              loading ? "pointer-events-none opacity-50" : ""
-            }`}
+            key={`${pageKey}-${layout}-${page}`}
+            className={layout === "grid" ? "mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4" : "mt-5 flex flex-col gap-2"}
           >
             {phones.map((p, i) => (
               <PhoneCard
-                key={`${p.brandName}-${p.name}`}
+                key={p.id || `${p.brandName}-${p.name}`}
                 phone={p}
                 index={i}
                 layout={layout}
@@ -152,9 +166,7 @@ export function PhoneExplorer({ catalogs, loadPage }: Props) {
               />
             ))}
           </div>
-          {!searching && (
-            <Pagination page={active.page} totalPages={active.totalPages} disabled={loading} onChange={goToPage} />
-          )}
+          <Pagination page={page} totalPages={totalPages} onChange={goToPage} />
         </>
       )}
     </div>

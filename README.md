@@ -21,7 +21,7 @@ src/
 │   ├── repositories/        Port/interface: BrandRepository, PhoneRepository
 │   └── services/            Aturan murni: searchPhones, phoneSeries, NEW_BADGE_COUNT
 ├── application/
-│   └── use-cases/           GetFeaturedCatalogs, GetBrandPhones, GetPhoneDetail
+│   └── use-cases/           GetFeaturedCatalogs, GetAllBrandPhones, GetPhoneDetail
 ├── infrastructure/          ← Adapter (implementasi port)
 │   ├── http/                FetchHttpClient (cache ISR + timeout)
 │   ├── phone-specs-api/     DTO, mapper DTO→entitas, PhoneSpecsApiRepository
@@ -48,5 +48,7 @@ Tambahkan juga aturan series-nya (A Series, S Series, dst.) di
 
 Env opsional: `PHONE_API_BASE` untuk URL API lain (mis. self-host).
 
-Paging mengikuti API: jumlah halaman diambil dari `last_page`, dan tiap halaman
-menampilkan seluruh HP yang dikembalikan API untuk halaman tersebut.
+Halaman pertama tiap brand dirender di server. Saat brand dibuka, klien mengambil
+**semua** halaman API brand itu (use case `GetAllBrandPhones`, maks. 30 halaman, 5 request
+paralel) lalu menggabungkannya. Filter series, pencarian, dan paging (24 HP per halaman)
+berjalan di klien atas data lengkap tersebut.

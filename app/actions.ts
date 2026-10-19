@@ -2,7 +2,7 @@
 
 import { useCases } from "@/di/container";
 
-/** Server action: ambil satu halaman HP brand (dipanggil saat pindah halaman). */
-export async function loadBrandPage(brandId: string, page: number) {
-  return useCases.getBrandPhones.execute(brandId, page);
+/** Server action: ambil seluruh HP brand (semua halaman API digabung) untuk difilter di klien. */
+export async function loadAllBrandPhones(brandId: string) {
+  return useCases.getAllBrandPhones.execute(brandId);
 }

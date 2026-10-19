@@ -1,5 +1,5 @@
 import "server-only";
-import { GetBrandPhones } from "@/application/use-cases/GetBrandPhones";
+import { GetAllBrandPhones } from "@/application/use-cases/GetAllBrandPhones";
 import { GetFeaturedCatalogs } from "@/application/use-cases/GetFeaturedCatalogs";
 import { GetPhoneDetail } from "@/application/use-cases/GetPhoneDetail";
 import { StaticBrandRepository, brandApiSlugs } from "@/infrastructure/brands/StaticBrandRepository";
@@ -19,6 +19,6 @@ const phoneRepository = new ResilientPhoneRepository(
 
 export const useCases = {
   getFeaturedCatalogs: new GetFeaturedCatalogs(brandRepository, phoneRepository),
-  getBrandPhones: new GetBrandPhones(brandRepository, phoneRepository),
+  getAllBrandPhones: new GetAllBrandPhones(brandRepository, phoneRepository),
   getPhoneDetail: new GetPhoneDetail(phoneRepository),
 };
